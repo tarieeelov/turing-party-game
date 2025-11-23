@@ -979,8 +979,103 @@ html = """
 
             ws = new WebSocket(url);
 
-            // дальше оставляешь как было...
+            ws.onopen = function() {
+                setStatus("✅ Connected to room " + roomId + " as " + playerName, true);
+            };
+
+            ws.onclose = function() {
+                setStatus("❌ Disconnected", false);
+            };
+
+            ws.onerror = function() {
+                setStatus("⚠️ Connection error", false);
+            };
+
+            ws.onmessage = function(event) {
+                // здесь твоя логика обработки сообщений (chat/system/players/voting...)
+                const data = JSON.parse(event.data);
+                const messagesDiv = document.getElementById("messages");
+
+                if (data.type === "chat") {
+                    const p = document.createElement("div");
+                    p.className = "chat-msg";
+                    const fromSpan = document.createElement("span");
+                    fromSpan.className = "from";
+                    fromSpan.innerText = data.from + ": ";
+                    const textSpan = document.createElement("span");
+                    textSpan.className = "text";
+                    textSpan.innerText = data.text;
+
+                    p.appendChild(fromSpan);
+                    p.appendChild(textSpan);
+                    messagesDiv.appendChild(p);
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } else if (data.type === "system") {
+                    const p = document.createElement("div");
+                    p.className = "system-msg";
+                    p.innerText = data.text;
+                    messagesDiv.appendChild(p);
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } else if (data.type === "players") {
+                    const playersList = document.getElementById("playersList");
+                    playersList.innerHTML = "";
+                    data.players.forEach(pName => {
+                        const li = document.createElement("li");
+                        li.innerText = pName;
+                        playersList.appendChild(li);
+                    });
+                } else if (data.type === "voting_start") {
+                    const votingBlock = document.getElementById("votingBlock");
+                    const votingMessage = document.getElementById("votingMessage");
+                    const votingOptions = document.getElementById("votingOptions");
+
+                    votingBlock.style.display = "block";
+                    votingMessage.innerText = data.message || "Время вышло! Голосуйте, кто был ботом.";
+
+                    votingOptions.innerHTML = "";
+                    data.players.forEach(pName => {
+                        const btn = document.createElement("button");
+                        btn.innerText = pName;
+                        btn.className = "vote-btn";
+                        btn.onclick = function() {
+                            sendVote(pName);
+                        };
+                        votingOptions.appendChild(btn);
+                    });
+
+                    const p = document.createElement("div");
+                    p.className = "system-msg";
+                    p.innerText = "🗳 Началось голосование! Нажми на ник, чтобы проголосовать.";
+                    messagesDiv.appendChild(p);
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } else if (data.type === "voting_result") {
+                    const votingBlock = document.getElementById("votingBlock");
+                    votingBlock.style.display = "none";
+
+                    const p = document.createElement("div");
+                    p.className = "system-msg";
+                    p.innerText = "🧾 Результаты голосования: " + (data.result_text || "");
+                    messagesDiv.appendChild(p);
+
+                    const p2 = document.createElement("div");
+                    p2.className = "system-msg";
+                    p2.innerText = "🤖 Бот был: " + data.bot;
+                    messagesDiv.appendChild(p2);
+
+                    if (data.votes) {
+                        data.votes.forEach(v => {
+                            const pv = document.createElement("div");
+                            pv.className = "system-msg";
+                            pv.innerText = `- ${v.voter} проголосовал за ${v.target}`;
+                            messagesDiv.appendChild(pv);
+                        });
+                    }
+
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                }
+            };
         }
+
 
         ws.onopen = function() {
             setStatus("✅ Connected to room " + roomId + " as " + playerName, true);
