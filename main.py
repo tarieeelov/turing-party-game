@@ -1,6 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from starlette.websockets import WebSocketState
 from fastapi.responses import HTMLResponse
+from starlette.websockets import WebSocketState
 from typing import Dict, List
 import json
 import random
@@ -10,26 +10,24 @@ import os
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-# Загружаем переменные окружения из .env
+# ---------- НАСТРОЙКА GEMINI ----------
+
 load_dotenv()
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY not found in environment/.env")
 
-# Конфигурируем Gemini
 genai.configure(api_key=api_key)
-# Можно использовать flash-модель, она быстрее и дешевле
+# используй ту модель, с которой у тебя уже работало
 gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 
+# ---------- FASTAPI ПРИЛОЖЕНИЕ ----------
+
 app = FastAPI()
-from starlette.websockets import WebSocketState
-from typing import Dict, List
-import json
-import random
-import asyncio
 
 BOT_CANDIDATE_NAMES = ["Alex", "Sam", "Taylor", "Jordan", "Dana", "Max", "Chris", "Nika"]
+
 
 class ConnectionManager:
     def __init__(self):
@@ -247,9 +245,7 @@ class ConnectionManager:
         await self.start_voting(room_id)
 
     async def start_voting(self, room_id: str):
-        """
-        Открываем голосование.
-        """
+        """Открываем голосование."""
         state = self._get_or_create_state(room_id)
         state["voting"] = {"is_open": True, "votes": {}}
 
@@ -271,7 +267,6 @@ class ConnectionManager:
         state = self._get_or_create_state(room_id)
         voting = state.get("voting", {})
         if not voting.get("is_open"):
-            # голосование ещё не открыто или уже закончено
             return
 
         if real_voter not in state["humans"]:
@@ -283,7 +278,6 @@ class ConnectionManager:
 
         # Проверяем, что таргет существует среди игроков
         if target_alias not in aliases.values():
-            # можно было бы отправить личную ошибку, но для простоты игнорируем
             return
 
         voting["votes"][voter_alias] = target_alias
@@ -296,9 +290,7 @@ class ConnectionManager:
             await self.finish_voting(room_id)
 
     async def finish_voting(self, room_id: str):
-        """
-        Подводим итоги голосования, считаем голоса и объявляем победу/проигрыш.
-        """
+        """Подводим итоги голосования, считаем голоса и объявляем победу/проигрыш."""
         state = self._get_or_create_state(room_id)
         voting = state.get("voting")
         if not voting:
@@ -326,7 +318,11 @@ class ConnectionManager:
             if winner_alias == bot_alias and winner_count > total_voters / 2:
                 majority_correct = True
 
-        result_text = "ПОБЕДА! Большинство угадали бота. 🎉" if majority_correct else "ПРОИГРЫШ! Большинство не угадали бота. 😈"
+        result_text = (
+            "ПОБЕДА! Большинство угадали бота. 🎉"
+            if majority_correct
+            else "ПРОИГРЫШ! Большинство не угадали бота. 😈"
+        )
 
         votes_list = [{"voter": v, "target": t} for v, t in votes.items()]
 
@@ -337,7 +333,7 @@ class ConnectionManager:
             "counts": counts,
             "winner": winner_alias,
             "majority_correct": majority_correct,
-            "result_text": result_text
+            "result_text": result_text,
         })
 
         voting["is_open"] = False
@@ -385,17 +381,17 @@ class ConnectionManager:
             # 50% шанс ответить просто так
             should_reply = random.random() < 0.5
 
-        print(f"[BOT DECISION] room={room_id} from={from_alias} mentioned={mentioned} question={is_question} reply={should_reply}")
+        print(
+            f"[BOT DECISION] room={room_id} from={from_alias} "
+            f"mentioned={mentioned} question={is_question} reply={should_reply}"
+        )
 
         if not should_reply:
             return
 
         history = state.get("history", [])
         recent = history[-15:]
-        history_lines = [
-            f"{m['alias']}: {m['text']}"
-            for m in recent
-        ]
+        history_lines = [f"{m['alias']}: {m['text']}" for m in recent]
         history_block = "\n".join(history_lines) if history_lines else "(пока нет истории)"
 
         await asyncio.sleep(random.uniform(0.7, 1.8))
@@ -419,8 +415,8 @@ class ConnectionManager:
 - Можешь задавать простые встречные вопросы.
 - Старайся учитывать контекст из истории.
 - Пиши с ошибками, как в реальном чате.
-- Можешь использовать сленг
-- Будь нейтрален, если тебе грубят - груби в ответ, если к тебе вежливы - будь вежлив.
+- Можешь использовать сленг.
+- Будь нейтрален, если тебе грубят — груби в ответ, если к тебе вежливы — будь вежлив.
 
 Сформулируй один естественный ответ от лица обычного человека в чате.
 """
@@ -444,7 +440,8 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# HTML для теста
+# ---------- HTML + JS ФРОНТ ----------
+
 html = """
 <!DOCTYPE html>
 <html lang="en">
@@ -958,124 +955,12 @@ html = """
             return;
         }
 
-        function connectWS() {
-            const roomId = document.getElementById("roomId").value.trim();
-            const playerName = document.getElementById("playerName").value.trim();
+        const loc = window.location;
+        const wsProtocol = loc.protocol === "https:" ? "wss" : "ws";
+        const wsBase = `${wsProtocol}://${loc.host}`;
+        const url = `${wsBase}/ws/${roomId}/${encodeURIComponent(playerName)}`;
 
-            if (!roomId || !playerName) {
-                alert("Введите Room и Name");
-                return;
-            }
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                alert("Вы уже подключены");
-                return;
-            }
-
-            const loc = window.location;
-            const wsProtocol = loc.protocol === "https:" ? "wss" : "ws";
-            const wsBase = `${wsProtocol}://${loc.host}`;
-            const url = `${wsBase}/ws/${roomId}/${encodeURIComponent(playerName)}`;
-
-            ws = new WebSocket(url);
-
-            ws.onopen = function() {
-                setStatus("✅ Connected to room " + roomId + " as " + playerName, true);
-            };
-
-            ws.onclose = function() {
-                setStatus("❌ Disconnected", false);
-            };
-
-            ws.onerror = function() {
-                setStatus("⚠️ Connection error", false);
-            };
-
-            ws.onmessage = function(event) {
-                // здесь твоя логика обработки сообщений (chat/system/players/voting...)
-                const data = JSON.parse(event.data);
-                const messagesDiv = document.getElementById("messages");
-
-                if (data.type === "chat") {
-                    const p = document.createElement("div");
-                    p.className = "chat-msg";
-                    const fromSpan = document.createElement("span");
-                    fromSpan.className = "from";
-                    fromSpan.innerText = data.from + ": ";
-                    const textSpan = document.createElement("span");
-                    textSpan.className = "text";
-                    textSpan.innerText = data.text;
-
-                    p.appendChild(fromSpan);
-                    p.appendChild(textSpan);
-                    messagesDiv.appendChild(p);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                } else if (data.type === "system") {
-                    const p = document.createElement("div");
-                    p.className = "system-msg";
-                    p.innerText = data.text;
-                    messagesDiv.appendChild(p);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                } else if (data.type === "players") {
-                    const playersList = document.getElementById("playersList");
-                    playersList.innerHTML = "";
-                    data.players.forEach(pName => {
-                        const li = document.createElement("li");
-                        li.innerText = pName;
-                        playersList.appendChild(li);
-                    });
-                } else if (data.type === "voting_start") {
-                    const votingBlock = document.getElementById("votingBlock");
-                    const votingMessage = document.getElementById("votingMessage");
-                    const votingOptions = document.getElementById("votingOptions");
-
-                    votingBlock.style.display = "block";
-                    votingMessage.innerText = data.message || "Время вышло! Голосуйте, кто был ботом.";
-
-                    votingOptions.innerHTML = "";
-                    data.players.forEach(pName => {
-                        const btn = document.createElement("button");
-                        btn.innerText = pName;
-                        btn.className = "vote-btn";
-                        btn.onclick = function() {
-                            sendVote(pName);
-                        };
-                        votingOptions.appendChild(btn);
-                    });
-
-                    const p = document.createElement("div");
-                    p.className = "system-msg";
-                    p.innerText = "🗳 Началось голосование! Нажми на ник, чтобы проголосовать.";
-                    messagesDiv.appendChild(p);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                } else if (data.type === "voting_result") {
-                    const votingBlock = document.getElementById("votingBlock");
-                    votingBlock.style.display = "none";
-
-                    const p = document.createElement("div");
-                    p.className = "system-msg";
-                    p.innerText = "🧾 Результаты голосования: " + (data.result_text || "");
-                    messagesDiv.appendChild(p);
-
-                    const p2 = document.createElement("div");
-                    p2.className = "system-msg";
-                    p2.innerText = "🤖 Бот был: " + data.bot;
-                    messagesDiv.appendChild(p2);
-
-                    if (data.votes) {
-                        data.votes.forEach(v => {
-                            const pv = document.createElement("div");
-                            pv.className = "system-msg";
-                            pv.innerText = `- ${v.voter} проголосовал за ${v.target}`;
-                            messagesDiv.appendChild(pv);
-                        });
-                    }
-
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                }
-            };
-        }
-
+        ws = new WebSocket(url);
 
         ws.onopen = function() {
             setStatus("✅ Connected to room " + roomId + " as " + playerName, true);
@@ -1210,7 +1095,6 @@ html = """
 """
 
 
-
 @app.get("/")
 async def get():
     return HTMLResponse(html)
@@ -1231,9 +1115,6 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 if len(parts) >= 2:
                     target_alias = parts[1]
                     await manager.register_vote(room_id, player_id, target_alias)
-                else:
-                    # Можно вывести сообщение об ошибке, но для простоты игнорируем
-                    pass
                 continue
 
             # Обычное чат-сообщение
